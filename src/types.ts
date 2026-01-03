@@ -211,10 +211,14 @@ export interface MergeOptions {
 export interface MergeResponse {
   /** Whether the merge was successful */
   success: boolean;
-  /** Download URL for merged video */
+  /** Download URL for merged video (if using URL mode) */
   downloadUrl?: string;
   /** Filename of the merged video */
   filename?: string;
+  /** Blob data of merged video (if using blob mode) */
+  blob?: Blob;
+  /** File size in bytes */
+  size?: number;
   /** Error message if failed */
   error?: string;
 }

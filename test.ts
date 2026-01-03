@@ -16,7 +16,7 @@ const client = new XTClient({
 
 // Test URLs
 const testUrls = [
-  'https://x.com/lac_n_c/status/2007422156045725871?s=20',
+  'https://www.youtube.com/watch?v=uX7sposDAzc',
 ];
 
 async function testFetch(url: string) {

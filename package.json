@@ -1,6 +1,6 @@
 {
   "name": "xt-api-wrapper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TypeScript wrapper for XT-API social media downloader - Extract media from Instagram, Facebook, Twitter, TikTok, YouTube, and more",
   "author": "XT-API Team",
   "license": "GPL-3.0",

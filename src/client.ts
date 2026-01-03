@@ -122,7 +122,7 @@ export class XTClient {
    * Merge YouTube video and audio streams
    *
    * @param options - Merge options including URL, quality, and optional filename
-   * @returns Promise resolving to MergeResponse with download URL
+   * @returns Promise resolving to MergeResponse with download URL or blob
    * @throws {XTError} On validation, network, or API errors
    *
    * @example
@@ -162,23 +162,77 @@ export class XTClient {
       throw new XTError('INVALID_URL', 'Quality parameter is required');
     }
 
-    // Build request body
-    const body: Record<string, string> = {
+    // Build query params for GET endpoint (returns file directly)
+    const params = new URLSearchParams({
       url: options.url,
       quality: options.quality,
-    };
-
-    if (options.filename) {
-      body.filename = options.filename;
-    }
-
-    // Make API request
-    const response = await this.request<MergeResponse>(ENDPOINTS.merge, {
-      method: 'POST',
-      body: JSON.stringify(body),
     });
 
-    return response;
+    if (options.filename) {
+      params.set('filename', options.filename);
+    }
+
+    // POST endpoint for YouTube merge - returns file directly
+    // We need to make the request and return blob/stream
+    const mergeUrl = `${this.baseUrl}/api/v1/youtube/merge`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      const response = await fetch(mergeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': this.apiKey,
+        },
+        body: JSON.stringify({
+          url: options.url,
+          quality: options.quality,
+          filename: options.filename,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        // Try to parse error
+        const errorText = await response.text();
+        throw new XTError('SERVER_ERROR', `Merge failed: ${errorText}`, { statusCode: response.status });
+      }
+
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get('content-disposition');
+      let finalFilename = options.filename || 'merged';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) {
+          finalFilename = match[1].replace(/['"]/g, '');
+        }
+      }
+
+      // Return blob for download
+      const blob = await response.blob();
+
+      return {
+        success: true,
+        filename: finalFilename,
+        blob: blob,
+        size: blob.size,
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof XTError) throw error;
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw XTError.timeoutError(this.timeout);
+      }
+      throw XTError.unknownError(
+        error instanceof Error ? error.message : 'Merge failed',
+        error instanceof Error ? error : undefined
+      );
+    }
   }
 
   /**
