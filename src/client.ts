@@ -21,10 +21,22 @@ import { FetchtiumError } from './errors';
 import { isValidURL, detectPlatform, generateRequestId } from './utils';
 
 /**
+ * Get base URL from environment variables
+ * Only checks FETCHTIUM_API_URL
+ */
+function getBaseUrlFromEnv(): string {
+  if (typeof process !== 'undefined' && process.env?.FETCHTIUM_API_URL) {
+    return process.env.FETCHTIUM_API_URL;
+  }
+  
+  return 'http://localhost:8080';
+}
+
+/**
  * Default configuration values
  */
 const DEFAULT_CONFIG = {
-  baseUrl: 'http://localhost:8080',
+  baseUrl: getBaseUrlFromEnv(),
   timeout: 30000,
   retry: {
     maxRetries: 3,

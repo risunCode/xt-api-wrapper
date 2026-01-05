@@ -1,4 +1,4 @@
-# Fetchtium API Wrapper
+# Fetchtium API Wrapper v2.2.0
 
 TypeScript wrapper for Fetchtium API social media downloader. Extract media from Instagram, Facebook, Twitter, TikTok, YouTube, and 9 more platforms with advanced features like automatic retry, caching, rate limiting, and batch processing.
 

@@ -1,25 +1,29 @@
 /**
- * Test Merge - XT-API Wrapper
- * Run with: npx tsx test-merge.ts
+ * Test Merge - Fetchtium Wrapper
+ * Run with: npx tsx tests/integration/test-merge.ts
+ * 
+ * NOTE: This is a development test. In production, set FETCHTIUM_API_URL
+ * in YOUR project's .env file, NOT in the wrapper folder.
  */
 
-import { XTClient } from '../../src/index';
+import { FetchtiumClient } from '../../src/index';
 import * as fs from 'fs';
 
-const API_KEY = 'xt_45277959eec3b6f17ea049324b62902f925faf07c084c1832d9bfbe18b4824f2';
-const BASE_URL = 'http://localhost:3002';
+const API_KEY = 'sk-dwa_c0e0714542ccf114748610fd97ae4fb1';
+const BASE_URL = 'http://localhost:8080'; // Development test URL
 
-const client = new XTClient({
+const client = new FetchtiumClient({
   apiKey: API_KEY,
   baseUrl: BASE_URL,
   timeout: 120000,
 });
 
 async function testMerge() {
-  const url = 'https://www.youtube.com/watch?v=uX7sposDAzc';
+  const url = 'https://www.youtube.com/watch?v=qEN3_ou1xXI';
   
-  console.log('🎬 Testing YouTube Merge');
+  console.log('🎬 Testing YouTube Merge with Fetchtium Wrapper');
   console.log('URL:', url);
+  console.log('Base URL:', BASE_URL);
   console.log('='.repeat(60));
 
   // Step 1: Fetch video info
@@ -39,13 +43,13 @@ async function testMerge() {
     console.log(`  [${i}] ${d.type} - ${d.quality} ${merge}`);
   });
 
-  // Step 2: Merge 480p
-  console.log('\n🔄 Step 2: Merging 480p video + audio...');
+  // Step 2: Merge 144p
+  console.log('\n🔄 Step 2: Merging 144p video + audio...');
   
   try {
     const mergeResult = await client.merge({
       url: url,
-      quality: '480p',
+      quality: '144p',
     });
 
     if (mergeResult.success && mergeResult.blob) {
