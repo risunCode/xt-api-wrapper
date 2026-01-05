@@ -1,8 +1,8 @@
 {
-  "name": "xt-api-wrapper",
-  "version": "1.0.1",
-  "description": "TypeScript wrapper for XT-API social media downloader - Extract media from Instagram, Facebook, Twitter, TikTok, YouTube, and more",
-  "author": "XT-API Team",
+  "name": "fetchtium-wrapper",
+  "version": "2.0.0",
+  "description": "TypeScript wrapper for Fetchtium social media downloader - Extract media from Instagram, Facebook, Twitter, TikTok, YouTube, Reddit, Bilibili, SoundCloud, Pixiv, Erome, Eporner, Rule34Video, and more",
+  "author": "risunCode",
   "license": "GPL-3.0",
   "keywords": [
     "social-media",
@@ -13,23 +13,25 @@
     "twitter",
     "tiktok",
     "youtube",
-    "weibo",
     "reddit",
     "bilibili",
     "soundcloud",
     "pixiv",
+    "erome",
+    "eporner",
+    "rule34video",
     "video-downloader",
     "media-extractor",
     "typescript"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/risuncode/xt-api-wrapper"
+    "url": "https://github.com/risunCode/Fetchtium_Wrapper"
   },
   "bugs": {
-    "url": "https://github.com/risuncode/xt-api-wrapper/issues"
+    "url": "https://github.com/risunCode/Fetchtium_Wrapper/issues"
   },
-  "homepage": "https://github.com/risuncode/xt-api-wrapper#readme",
+  "homepage": "https://github.com/risunCode/Fetchtium_Wrapper#readme",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -62,7 +64,7 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
+    "@types/node": "^20.19.27",
     "rimraf": "^5.0.5",
     "tsup": "^8.0.1",
     "tsx": "^4.21.0",

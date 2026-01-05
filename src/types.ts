@@ -1,6 +1,6 @@
 /**
- * XT-API Wrapper - Type Definitions
- * @module xt-api-wrapper/types
+ * Fetchtium API Wrapper - Type Definitions
+ * @module fetchtium-wrapper/types
  */
 
 // ============================================================================
@@ -8,15 +8,59 @@
 // ============================================================================
 
 /**
- * Configuration options for XTClient
+ * Configuration options for FetchtiumClient
  */
-export interface XTClientConfig {
+export interface FetchtiumClientConfig {
   /** API key for authentication (required) */
   apiKey: string;
-  /** Base URL for the API (default: 'https://api-xtfetch.up.railway.app') */
+  /** Base URL for the API (default: 'http://localhost:8080') */
   baseUrl?: string;
   /** Request timeout in milliseconds (default: 30000) */
   timeout?: number;
+  /** Retry configuration for automatic retry logic */
+  retry?: RetryConfig;
+  /** Cache configuration for response caching */
+  cache?: CacheConfig;
+  /** Rate limiting configuration */
+  rateLimit?: RateLimitConfig;
+}
+
+/**
+ * Retry configuration for automatic retry logic
+ */
+export interface RetryConfig {
+  /** Maximum number of retry attempts (default: 3) */
+  maxRetries?: number;
+  /** Initial delay between retries in milliseconds (default: 1000) */
+  retryDelay?: number;
+  /** Exponential backoff multiplier (default: 2) */
+  backoffMultiplier?: number;
+  /** Error codes that should trigger a retry (default: retryable errors) */
+  retryableErrors?: ErrorCode[];
+}
+
+/**
+ * Cache configuration for response caching
+ */
+export interface CacheConfig {
+  /** Enable caching (default: false) */
+  enabled?: boolean;
+  /** Cache time-to-live in seconds (default: 300) */
+  ttl?: number;
+  /** Maximum number of cache entries (default: 100) */
+  maxSize?: number;
+}
+
+/**
+ * Rate limiting configuration
+ */
+export interface RateLimitConfig {
+  /** Maximum number of concurrent requests (default: 5) */
+  maxConcurrent?: number;
+  /** Queue timeout in milliseconds (default: 30000) */
+  queueTimeout?: number;
+  /** Respect server rate limits via Retry-After header (default: true) */
+  respectServerLimits?: boolean;
 }
 
 // ============================================================================
@@ -25,7 +69,7 @@ export interface XTClientConfig {
 
 /**
  * Supported platforms for media extraction
- * Includes social media, content platforms, and adult platforms (18+)
+ * Matches Fetchtium backend supported platforms
  */
 export type Platform =
   // Social Media
@@ -34,7 +78,6 @@ export type Platform =
   | 'twitter'
   | 'tiktok'
   | 'youtube'
-  | 'weibo'
   // Content Platforms
   | 'reddit'
   | 'bilibili'
@@ -43,8 +86,9 @@ export type Platform =
   // Adult Platforms (18+)
   | 'erome'
   | 'eporner'
-  | 'pornhub'
-  | 'rule34video';
+  | 'rule34video'
+  // Generic (fallback for any URL)
+  | 'generic';
 
 /**
  * Type of content being extracted
@@ -70,15 +114,19 @@ export type MediaType = 'video' | 'image' | 'audio';
 /**
  * Main API response structure
  */
-export interface XTResponse {
+export interface FetchtiumResponse {
   /** Whether the request was successful */
   success: boolean;
-  /** Media data extracted from the URL */
-  data: MediaData;
-  /** Response metadata */
-  meta: ResponseMeta;
-  /** Whether the response was served from cache */
-  cached: boolean;
+  /** Media data extracted from the URL (only when success: true) */
+  data?: MediaData;
+  /** Response metadata (only when success: true) */
+  meta?: ResponseMeta;
+  /** Whether the response was served from cache (only when success: true) */
+  cached?: boolean;
+  /** Error code (only when success: false) */
+  code?: ErrorCode;
+  /** Error message (only when success: false) */
+  error?: string;
 }
 
 /**
@@ -90,23 +138,27 @@ export interface MediaData {
   /** Type of content */
   contentType: ContentType;
   /** Unique post identifier on the platform */
-  postId?: string;
-  /** Date the content was posted */
-  postDate?: string;
-  /** Author/creator information */
-  author?: Author;
+  id: string;
   /** Title of the content */
   title?: string;
   /** Description or caption */
   description?: string;
+  /** Author/creator information */
+  author?: Author;
   /** Thumbnail URL */
   thumbnail?: string;
-  /** Original URL that was processed */
-  url: string;
-  /** Engagement metrics */
-  engagement?: Engagement;
+  /** Duration in seconds (for videos/audio) */
+  duration?: number;
   /** Available downloads */
   downloads: Download[];
+  /** Engagement metrics */
+  engagement?: Engagement;
+  /** Original URL that was processed */
+  url: string;
+  /** Source URL (may include query params) */
+  sourceUrl?: string;
+  /** Timestamp when content was extracted */
+  extractedAt?: string;
   /** Whether a cookie was used for extraction */
   usedCookie?: boolean;
   /** Issues/errors encountered during extraction */
@@ -133,6 +185,8 @@ export interface Download {
   width?: number;
   /** Video/image height in pixels */
   height?: number;
+  /** File extension (e.g., 'mp4', 'webm', 'jpg') */
+  extension?: string;
   /** File format (e.g., 'mp4', 'webm', 'jpg') */
   format?: string;
   /** MIME type (e.g., 'video/mp4', 'image/jpeg') */
@@ -141,6 +195,10 @@ export interface Download {
   needsMerge?: boolean;
   /** Whether video has audio track */
   hasAudio?: boolean;
+  /** Whether audio can be extracted/converted from this download */
+  canConvertAudio?: boolean;
+  /** Display label for UI */
+  label?: string;
 }
 
 /**
@@ -183,6 +241,8 @@ export interface ResponseMeta {
   responseTime: number;
   /** Final resolved URL after redirects */
   resolvedUrl?: string;
+  /** Original URL */
+  url?: string;
   /** Whether the content is publicly accessible */
   isPublic?: boolean;
   /** Whether a cookie was used */
@@ -211,15 +271,45 @@ export interface MergeOptions {
 export interface MergeResponse {
   /** Whether the merge was successful */
   success: boolean;
-  /** Download URL for merged video (if using URL mode) */
-  downloadUrl?: string;
-  /** Filename of the merged video */
-  filename?: string;
-  /** Blob data of merged video (if using blob mode) */
+  /** Merged video blob */
   blob?: Blob;
+  /** Suggested filename */
+  filename?: string;
   /** File size in bytes */
   size?: number;
-  /** Error message if failed */
+  /** Error message (if failed) */
+  error?: string;
+}
+
+// ============================================================================
+// Audio Convert Types
+// ============================================================================
+
+/**
+ * Options for audio conversion
+ */
+export interface ConvertOptions {
+  /** Video URL to extract audio from */
+  url: string;
+  /** Output format: 'mp3' or 'm4a' */
+  format?: 'mp3' | 'm4a';
+  /** Optional output filename (without extension) */
+  filename?: string;
+}
+
+/**
+ * Response from convert endpoint
+ */
+export interface ConvertResponse {
+  /** Whether the conversion was successful */
+  success: boolean;
+  /** Converted audio blob */
+  blob?: Blob;
+  /** Suggested filename */
+  filename?: string;
+  /** File size in bytes */
+  size?: number;
+  /** Error message (if failed) */
   error?: string;
 }
 
@@ -229,20 +319,34 @@ export interface MergeResponse {
 
 /**
  * Error codes returned by the API
+ * Matches Fetchtium backend error codes
  */
 export type ErrorCode =
-  | 'PRIVATE_CONTENT'
-  | 'LOGIN_REQUIRED'
-  | 'RATE_LIMITED'
-  | 'NO_MEDIA'
-  | 'CONTENT_REMOVED'
-  | 'NETWORK_ERROR'
-  | 'TIMEOUT'
   | 'INVALID_URL'
   | 'UNSUPPORTED_PLATFORM'
-  | 'INVALID_API_KEY'
-  | 'SERVER_ERROR'
-  | 'UNKNOWN_ERROR';
+  | 'PLATFORM_DISABLED'
+  | 'PRIVATE_CONTENT'
+  | 'COOKIE_REQUIRED'
+  | 'COOKIE_EXPIRED'
+  | 'CONTENT_NOT_FOUND'
+  | 'NO_MEDIA_FOUND'
+  | 'RATE_LIMITED'
+  | 'NETWORK_ERROR'
+  | 'TIMEOUT'
+  | 'API_ERROR'
+  | 'PARSE_ERROR'
+  | 'CHECKPOINT_REQUIRED'
+  | 'SCRAPE_ERROR'
+  | 'LOGIN_REQUIRED'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'BAD_REQUEST'
+  | 'NO_MEDIA'
+  | 'STORY_EXPIRED'
+  | 'AGE_RESTRICTED'
+  | 'CONTENT_REMOVED'
+  | 'MAINTENANCE'
+  | 'INTERNAL_ERROR';
 
 /**
  * Error response structure from API
@@ -256,13 +360,42 @@ export interface ErrorResponse {
 }
 
 // ============================================================================
+// Type Guards
+// ============================================================================
+
+/**
+ * Type guard to check if response is a successful FetchtiumResponse
+ */
+export function isFetchtiumResponse(response: unknown): response is FetchtiumResponse {
+  return (
+    typeof response === 'object' &&
+    response !== null &&
+    'success' in response &&
+    (response as FetchtiumResponse).success === true
+  );
+}
+
+/**
+ * Type guard to check if response is an ErrorResponse
+ */
+export function isErrorResponse(response: unknown): response is ErrorResponse {
+  return (
+    typeof response === 'object' &&
+    response !== null &&
+    'success' in response &&
+    (response as ErrorResponse).success === false &&
+    'error' in response
+  );
+}
+
+// ============================================================================
 // Internal Types
 // ============================================================================
 
 /**
  * Raw API response (before processing)
  */
-export type RawAPIResponse = XTResponse | ErrorResponse;
+export type RawAPIResponse = FetchtiumResponse | ErrorResponse;
 
 /**
  * Request options for internal use

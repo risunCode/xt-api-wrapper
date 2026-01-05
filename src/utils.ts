@@ -7,6 +7,7 @@ import type { Platform, Download } from './types';
 
 /**
  * List of all supported platforms
+ * Matches Fetchtium backend supported platforms
  */
 export const SUPPORTED_PLATFORMS: Platform[] = [
   // Social Media
@@ -15,7 +16,6 @@ export const SUPPORTED_PLATFORMS: Platform[] = [
   'twitter',
   'tiktok',
   'youtube',
-  'weibo',
   // Content Platforms
   'reddit',
   'bilibili',
@@ -24,28 +24,29 @@ export const SUPPORTED_PLATFORMS: Platform[] = [
   // Adult Platforms (18+)
   'erome',
   'eporner',
-  'pornhub',
   'rule34video',
+  // Generic (fallback for any URL)
+  'generic',
 ];
 
 /**
  * Platform domain patterns for URL detection
+ * Matches Fetchtium backend platform detection
  */
 const PLATFORM_PATTERNS: Record<Platform, RegExp[]> = {
   instagram: [/instagram\.com/, /instagr\.am/],
   facebook: [/facebook\.com/, /fb\.watch/, /fb\.com/],
   twitter: [/twitter\.com/, /x\.com/, /t\.co/],
-  tiktok: [/tiktok\.com/, /vm\.tiktok\.com/],
-  youtube: [/youtube\.com/, /youtu\.be/, /youtube\.shorts/],
-  weibo: [/weibo\.com/, /weibo\.cn/],
-  reddit: [/reddit\.com/, /redd\.it/],
+  tiktok: [/tiktok\.com/, /vm\.tiktok\.com/, /vt\.tiktok\.com/],
+  youtube: [/youtube\.com/, /youtu\.be/, /youtube-nocookie\.com/, /m\.youtube\.com/],
+  reddit: [/reddit\.com/, /redd\.it/, /old\.reddit\.com/],
   bilibili: [/bilibili\.com/, /b23\.tv/],
-  soundcloud: [/soundcloud\.com/],
-  pixiv: [/pixiv\.net/],
+  soundcloud: [/soundcloud\.com/, /snd\.sc/],
+  pixiv: [/pixiv\.net/, /pximg\.net/],
   erome: [/erome\.com/],
   eporner: [/eporner\.com/],
-  pornhub: [/pornhub\.com/],
   rule34video: [/rule34video\.com/],
+  generic: [/.*/], // Matches any URL as fallback
 };
 
 /**

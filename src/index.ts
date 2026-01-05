@@ -1,28 +1,28 @@
 /**
- * XT-API Wrapper
- * TypeScript wrapper for XT-API social media downloader
+ * Fetchtium API Wrapper
+ * TypeScript wrapper for Fetchtium social media downloader
  *
  * @packageDocumentation
- * @module xt-api-wrapper
+ * @module fetchtium-wrapper
  * @license GPL-3.0
  */
 
 // Main client
-export { XTClient } from './client';
+export { FetchtiumClient } from './client';
 
 // Error classes
-export { XTError, isXTError } from './errors';
+export { FetchtiumError, isFetchtiumError } from './errors';
 
 // Types
 export type {
   // Configuration
-  XTClientConfig,
+  FetchtiumClientConfig,
   // Platform & Content
   Platform,
   ContentType,
   MediaType,
   // Response types
-  XTResponse,
+  FetchtiumResponse,
   MediaData,
   Download,
   Author,
@@ -31,9 +31,15 @@ export type {
   // Merge types
   MergeOptions,
   MergeResponse,
+  // Convert types
+  ConvertOptions,
+  ConvertResponse,
   // Error types
   ErrorCode,
   ErrorResponse,
+  // Type guards
+  isFetchtiumResponse,
+  isErrorResponse,
 } from './types';
 
 // Utilities

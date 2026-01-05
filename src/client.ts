@@ -1,25 +1,47 @@
 /**
- * XT-API Wrapper - Client Class
- * @module xt-api-wrapper/client
+ * Fetchtium API Wrapper - Client Class
+ * @module fetchtium-wrapper/client
  */
 
 import type {
-  XTClientConfig,
-  XTResponse,
+  FetchtiumClientConfig,
+  FetchtiumResponse,
   MergeOptions,
   MergeResponse,
+  ConvertOptions,
+  ConvertResponse,
   RequestOptions,
   ErrorResponse,
+  RetryConfig,
+  CacheConfig,
+  RateLimitConfig,
+  ErrorCode,
 } from './types';
-import { XTError } from './errors';
+import { FetchtiumError } from './errors';
 import { isValidURL, detectPlatform, generateRequestId } from './utils';
 
 /**
  * Default configuration values
  */
 const DEFAULT_CONFIG = {
-  baseUrl: 'https://api-xtfetch.up.railway.app',
+  baseUrl: 'http://localhost:8080',
   timeout: 30000,
+  retry: {
+    maxRetries: 3,
+    retryDelay: 1000,
+    backoffMultiplier: 2,
+    retryableErrors: ['NETWORK_ERROR', 'TIMEOUT', 'RATE_LIMITED', 'INTERNAL_ERROR'] as ErrorCode[],
+  },
+  cache: {
+    enabled: false,
+    ttl: 300,
+    maxSize: 100,
+  },
+  rateLimit: {
+    maxConcurrent: 5,
+    queueTimeout: 30000,
+    respectServerLimits: true,
+  },
 } as const;
 
 /**
@@ -28,16 +50,17 @@ const DEFAULT_CONFIG = {
 const ENDPOINTS = {
   fetch: '/api/v1/publicservices',
   merge: '/api/v1/youtube/merge',
+  convert: '/api/v1/convert',
 } as const;
 
 /**
- * XTClient - Main client class for interacting with XT-API
+ * FetchtiumClient - Main client class for interacting with Fetchtium API
  *
  * @example
  * ```typescript
- * const client = new XTClient({
- *   apiKey: 'xt_xxxxx',
- *   baseUrl: 'https://api-xtfetch.up.railway.app',
+ * const client = new FetchtiumClient({
+ *   apiKey: 'sk_xxxxx',
+ *   baseUrl: 'http://localhost:8080',
  *   timeout: 30000
  * });
  *
@@ -45,32 +68,68 @@ const ENDPOINTS = {
  * console.log(result.data.downloads);
  * ```
  */
-export class XTClient {
+export class FetchtiumClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeout: number;
+  private readonly retryConfig: Required<RetryConfig>;
+  private readonly cacheConfig: Required<CacheConfig>;
+  private readonly rateLimitConfig: Required<RateLimitConfig>;
+  private cache: Map<string, { data: FetchtiumResponse; timestamp: number; ttl: number }>;
+  private activeRequests: number = 0;
+  private requestQueue: Array<{
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+    fn: () => Promise<unknown>;
+  }> = [];
 
   /**
-   * Create a new XTClient instance
+   * Create a new FetchtiumClient instance
    * @param config - Client configuration
-   * @throws {XTError} If API key is not provided
+   * @throws {FetchtiumError} If API key is not provided
    */
-  constructor(config: XTClientConfig) {
+  constructor(config: FetchtiumClientConfig) {
     if (!config.apiKey || typeof config.apiKey !== 'string') {
-      throw XTError.invalidAPIKey();
+      throw FetchtiumError.invalidAPIKey();
+    }
+
+    // Validate API key format
+    if (!config.apiKey.startsWith('sk-dwa_')) {
+      throw new FetchtiumError(
+        'UNAUTHORIZED',
+        'Invalid API key format. API key must start with "sk-dwa_"',
+        { severity: 'high' }
+      );
     }
 
     this.apiKey = config.apiKey;
     this.baseUrl = (config.baseUrl || DEFAULT_CONFIG.baseUrl).replace(/\/$/, '');
     this.timeout = config.timeout || DEFAULT_CONFIG.timeout;
+    this.retryConfig = {
+      maxRetries: config.retry?.maxRetries ?? DEFAULT_CONFIG.retry.maxRetries,
+      retryDelay: config.retry?.retryDelay ?? DEFAULT_CONFIG.retry.retryDelay,
+      backoffMultiplier: config.retry?.backoffMultiplier ?? DEFAULT_CONFIG.retry.backoffMultiplier,
+      retryableErrors: config.retry?.retryableErrors ?? DEFAULT_CONFIG.retry.retryableErrors,
+    };
+    this.cacheConfig = {
+      enabled: config.cache?.enabled ?? DEFAULT_CONFIG.cache.enabled,
+      ttl: config.cache?.ttl ?? DEFAULT_CONFIG.cache.ttl,
+      maxSize: config.cache?.maxSize ?? DEFAULT_CONFIG.cache.maxSize,
+    };
+    this.rateLimitConfig = {
+      maxConcurrent: config.rateLimit?.maxConcurrent ?? DEFAULT_CONFIG.rateLimit.maxConcurrent,
+      queueTimeout: config.rateLimit?.queueTimeout ?? DEFAULT_CONFIG.rateLimit.queueTimeout,
+      respectServerLimits: config.rateLimit?.respectServerLimits ?? DEFAULT_CONFIG.rateLimit.respectServerLimits,
+    };
+    this.cache = new Map();
   }
 
   /**
    * Fetch media from a URL
    *
    * @param url - URL to extract media from
-   * @returns Promise resolving to XTResponse with media data
-   * @throws {XTError} On validation, network, or API errors
+   * @returns Promise resolving to FetchtiumResponse with media data
+   * @throws {FetchtiumError} On validation, network, or API errors
    *
    * @example
    * ```typescript
@@ -83,37 +142,69 @@ export class XTClient {
    * }
    * ```
    */
-  async fetch(url: string): Promise<XTResponse> {
+  async fetch(url: string): Promise<FetchtiumResponse> {
     // Validate URL
-    if (!url || typeof url !== 'string') {
-      throw XTError.invalidURL(url);
-    }
-
-    if (!isValidURL(url)) {
-      throw XTError.invalidURL(url);
-    }
+    this.validateURL(url);
 
     // Check if platform is supported
     const platform = detectPlatform(url);
     if (!platform) {
-      throw new XTError('UNSUPPORTED_PLATFORM', `URL does not match any supported platform: ${url}`);
+      throw new FetchtiumError('UNSUPPORTED_PLATFORM', `URL does not match any supported platform: ${url}`);
     }
 
-    // Make API request
-    const response = await this.request<XTResponse>(ENDPOINTS.fetch, {
-      method: 'POST',
-      body: JSON.stringify({ url }),
-    });
+    // Check cache first
+    const cached = this.getFromCache(url);
+    if (cached) {
+      return cached;
+    }
 
-    // Check for error response - backend returns success: false with data.issues array
+    // Make API request with rate limiting
+    const requestId = generateRequestId();
+    const response = await this.executeWithRateLimit(() =>
+      this.request<FetchtiumResponse>(ENDPOINTS.fetch, {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      })
+    );
+
+    // Check for error response - backend returns success: false with code and error fields
     if (!response.success) {
+      // New format: success: false, code: "ERROR_CODE", error: "message"
+      if (response.code) {
+        throw new FetchtiumError(
+          response.code as ErrorCode,
+          response.error || 'Unknown error',
+          {
+            context: {
+              url,
+              platform,
+              requestId,
+            },
+          }
+        );
+      }
+      
+      // Legacy format: success: false with data.issues array
       const issues = response.data?.issues || [];
-      const issueCode = issues[0] || 'UNKNOWN_ERROR';
+      const issueCode = issues[0] || 'API_ERROR';
       
       // Map backend issue codes to our error codes
       const errorCode = this.mapIssueToErrorCode(issueCode);
-      throw new XTError(errorCode, `Failed to fetch media: ${issues.join(', ') || 'Unknown error'}`);
+      throw new FetchtiumError(
+        errorCode,
+        `Failed to fetch media: ${issues.length > 0 ? issues.join(', ') : 'Unknown error'}`,
+        {
+          context: {
+            url,
+            platform,
+            requestId,
+          },
+        }
+      );
     }
+
+    // Cache the result
+    this.setCache(url, response);
 
     return response;
   }
@@ -122,8 +213,8 @@ export class XTClient {
    * Merge YouTube video and audio streams
    *
    * @param options - Merge options including URL, quality, and optional filename
-   * @returns Promise resolving to MergeResponse with download URL or blob
-   * @throws {XTError} On validation, network, or API errors
+   * @returns Promise resolving to MergeResponse with blob
+   * @throws {FetchtiumError} On validation, network, or API errors
    *
    * @example
    * ```typescript
@@ -133,25 +224,23 @@ export class XTClient {
    *   filename: 'my_video'
    * });
    *
-   * if (result.success && result.downloadUrl) {
-   *   console.log('Download:', result.downloadUrl);
+   * if (result.success && result.blob) {
+   *   const url = URL.createObjectURL(result.blob);
+   *   const a = document.createElement('a');
+   *   a.href = url;
+   *   a.download = result.filename || 'video.mp4';
+   *   a.click();
    * }
    * ```
    */
   async merge(options: MergeOptions): Promise<MergeResponse> {
     // Validate URL
-    if (!options.url || typeof options.url !== 'string') {
-      throw XTError.invalidURL(options.url);
-    }
-
-    if (!isValidURL(options.url)) {
-      throw XTError.invalidURL(options.url);
-    }
+    this.validateURL(options.url);
 
     // Validate it's a YouTube URL
     const platform = detectPlatform(options.url);
     if (platform !== 'youtube') {
-      throw new XTError(
+      throw new FetchtiumError(
         'UNSUPPORTED_PLATFORM',
         'Merge is only supported for YouTube URLs'
       );
@@ -159,7 +248,7 @@ export class XTClient {
 
     // Validate quality
     if (!options.quality || typeof options.quality !== 'string') {
-      throw new XTError('INVALID_URL', 'Quality parameter is required');
+      throw new FetchtiumError('BAD_REQUEST', 'Quality parameter is required');
     }
 
     // Build query params for GET endpoint (returns file directly)
@@ -199,7 +288,7 @@ export class XTClient {
       if (!response.ok) {
         // Try to parse error
         const errorText = await response.text();
-        throw new XTError('SERVER_ERROR', `Merge failed: ${errorText}`, { statusCode: response.status });
+        throw new FetchtiumError('INTERNAL_ERROR', `Merge failed: ${errorText}`, { statusCode: response.status });
       }
 
       // Get filename from Content-Disposition header
@@ -224,12 +313,116 @@ export class XTClient {
     } catch (error) {
       clearTimeout(timeoutId);
 
-      if (error instanceof XTError) throw error;
+      if (error instanceof FetchtiumError) throw error;
       if (error instanceof Error && error.name === 'AbortError') {
-        throw XTError.timeoutError(this.timeout);
+        throw FetchtiumError.timeoutError(this.timeout);
       }
-      throw XTError.unknownError(
+      throw FetchtiumError.unknownError(
         error instanceof Error ? error.message : 'Merge failed',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Convert video to audio (MP3/M4A)
+   *
+   * @param options - Convert options including URL, format, and optional filename
+   * @returns Promise resolving to ConvertResponse with audio blob
+   * @throws {FetchtiumError} On validation, network, or API errors
+   *
+   * @example
+   * ```typescript
+   * const result = await client.convert({
+   *   url: 'https://www.youtube.com/watch?v=xxx',
+   *   format: 'mp3',
+   *   filename: 'my_audio',
+   * });
+   *
+   * if (result.success && result.blob) {
+   *   const url = URL.createObjectURL(result.blob);
+   *   const a = document.createElement('a');
+   *   a.href = url;
+   *   a.download = result.filename || 'audio.mp3';
+   *   a.click();
+   * }
+   * ```
+   */
+  async convert(options: ConvertOptions): Promise<ConvertResponse> {
+    // Validate URL
+    this.validateURL(options.url);
+
+    // Validate platform supports video
+    const platform = detectPlatform(options.url);
+    if (!platform) {
+      throw new FetchtiumError('UNSUPPORTED_PLATFORM', 'URL does not match any supported platform');
+    }
+
+    // Validate format
+    const format = options.format || 'mp3';
+    if (format !== 'mp3' && format !== 'm4a') {
+      throw new FetchtiumError('BAD_REQUEST', 'Format must be "mp3" or "m4a"');
+    }
+
+    // Build query params
+    const params = new URLSearchParams({
+      url: options.url,
+      format,
+    });
+
+    if (options.filename) {
+      params.set('filename', options.filename);
+    }
+
+    const convertUrl = `${this.baseUrl}${ENDPOINTS.convert}?${params.toString()}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      const response = await fetch(convertUrl, {
+        method: 'GET',
+        headers: {
+          'X-API-Key': this.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new FetchtiumError('INTERNAL_ERROR', `Audio conversion failed: ${errorText}`, { statusCode: response.status });
+      }
+
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get('content-disposition');
+      let finalFilename = options.filename || `audio_${Date.now()}`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) {
+          finalFilename = match[1].replace(/['"]/g, '');
+        }
+      }
+
+      // Get blob
+      const blob = await response.blob();
+
+      return {
+        success: true,
+        blob,
+        filename: finalFilename,
+        size: blob.size,
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof FetchtiumError) throw error;
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw FetchtiumError.timeoutError(this.timeout);
+      }
+      throw FetchtiumError.unknownError(
+        error instanceof Error ? error.message : 'Audio conversion failed',
         error instanceof Error ? error : undefined
       );
     }
@@ -277,21 +470,21 @@ export class XTClient {
 
       // Handle abort (timeout)
       if (error instanceof Error && error.name === 'AbortError') {
-        throw XTError.timeoutError(this.timeout);
+        throw FetchtiumError.timeoutError(this.timeout);
       }
 
       // Handle fetch errors
       if (error instanceof TypeError) {
-        throw XTError.networkError(error.message, error);
+        throw FetchtiumError.networkError(error.message, error);
       }
 
-      // Re-throw XTError
-      if (error instanceof XTError) {
+      // Re-throw FetchtiumError
+      if (error instanceof FetchtiumError) {
         throw error;
       }
 
       // Wrap unknown errors
-      throw XTError.unknownError(
+      throw FetchtiumError.unknownError(
         error instanceof Error ? error.message : 'Unknown error occurred',
         error instanceof Error ? error : undefined
       );
@@ -317,40 +510,40 @@ export class XTClient {
     switch (status) {
       case 400:
         if (errorBody?.error) {
-          throw XTError.fromAPIError(errorBody.error, status);
+          throw FetchtiumError.fromAPIError(errorBody.error, status);
         }
-        throw new XTError('INVALID_URL', 'Bad request', { statusCode: status });
+        throw new FetchtiumError('BAD_REQUEST', 'Bad request', { statusCode: status });
 
       case 401:
-        throw XTError.invalidAPIKey();
+        throw FetchtiumError.invalidAPIKey();
 
       case 403:
         if (errorBody?.error) {
-          throw XTError.fromAPIError(errorBody.error, status);
+          throw FetchtiumError.fromAPIError(errorBody.error, status);
         }
-        throw new XTError('PRIVATE_CONTENT', 'Access forbidden', { statusCode: status });
+        throw new FetchtiumError('FORBIDDEN', 'Access forbidden - content may be private or age-restricted', { statusCode: status });
 
       case 404:
-        throw new XTError('CONTENT_REMOVED', 'Content not found', { statusCode: status });
+        throw new FetchtiumError('CONTENT_NOT_FOUND', 'Content not found', { statusCode: status });
 
       case 429:
         const retryAfter = response.headers.get('Retry-After');
-        throw XTError.rateLimited(retryAfter ? parseInt(retryAfter) : undefined);
+        throw FetchtiumError.rateLimited(retryAfter ? parseInt(retryAfter) : undefined);
 
       case 500:
       case 502:
       case 503:
       case 504:
-        throw XTError.serverError(
+        throw FetchtiumError.serverError(
           errorBody?.error?.message || `Server error (${status})`,
           status
         );
 
       default:
         if (errorBody?.error) {
-          throw XTError.fromAPIError(errorBody.error, status);
+          throw FetchtiumError.fromAPIError(errorBody.error, status);
         }
-        throw XTError.serverError(`HTTP error ${status}`, status);
+        throw FetchtiumError.serverError(`HTTP error ${status}`, status);
     }
   }
 
@@ -377,19 +570,332 @@ export class XTClient {
   }
 
   /**
-   * Map backend issue codes to XTError codes
+   * Map backend issue codes to FetchtiumError codes
+   * Matches Fetchtium backend error codes
    * @internal
    */
-  private mapIssueToErrorCode(issue: string): import('./types').ErrorCode {
-    const issueMap: Record<string, import('./types').ErrorCode> = {
-      'no_media': 'NO_MEDIA',
-      'private_content': 'PRIVATE_CONTENT',
+  private mapIssueToErrorCode(issue: string): ErrorCode {
+    const issueMap: Record<string, ErrorCode> = {
+      // Login/Auth related
       'login_required': 'LOGIN_REQUIRED',
-      'rate_limited': 'RATE_LIMITED',
+      'checkpoint': 'CHECKPOINT_REQUIRED',
+      'cookies_required': 'COOKIE_REQUIRED',
+      'no_healthy_cookies': 'COOKIE_REQUIRED',
+      'all_cookies_failed': 'COOKIE_REQUIRED',
+      
+      // Content related
+      'no_media': 'NO_MEDIA_FOUND',
+      'private': 'PRIVATE_CONTENT',
+      'private_or_friends': 'PRIVATE_CONTENT',
+      'age_restricted': 'AGE_RESTRICTED',
       'content_removed': 'CONTENT_REMOVED',
+      'story_expired': 'STORY_EXPIRED',
+      
+      // Rate limiting
+      'rate_limited': 'RATE_LIMITED',
+      
+      // URL/Platform
       'invalid_url': 'INVALID_URL',
       'unsupported_platform': 'UNSUPPORTED_PLATFORM',
+      
+      // Parsing
+      'parse_error': 'PARSE_ERROR',
     };
-    return issueMap[issue.toLowerCase()] || 'UNKNOWN_ERROR';
+    return issueMap[issue.toLowerCase()] || 'API_ERROR';
+  }
+
+  // ============================================================================
+  // Retry Logic
+  // ============================================================================
+
+  /**
+   * Validate URL and throw error if invalid
+   * @internal
+   */
+  private validateURL(url: string): void {
+    if (!url || typeof url !== 'string') {
+      throw FetchtiumError.invalidURL(url);
+    }
+    if (!isValidURL(url)) {
+      throw FetchtiumError.invalidURL(url);
+    }
+  }
+
+  /**
+   * Fetch with automatic retry
+   * @param url - URL to extract media from
+   * @param retryConfig - Optional retry configuration override
+   * @returns Promise resolving to FetchtiumResponse with media data
+   * @throws {FetchtiumError} On validation, network, or API errors (after max retries)
+   */
+  async fetchWithRetry(url: string, retryConfig?: Partial<RetryConfig>): Promise<FetchtiumResponse> {
+    this.validateURL(url);
+    const config = { ...this.retryConfig, ...retryConfig };
+    let lastError: FetchtiumError | undefined;
+    let attempt = 0;
+
+    while (attempt <= config.maxRetries) {
+      try {
+        const result = await this.fetch(url);
+        return result;
+      } catch (error) {
+        if (!(error instanceof FetchtiumError)) {
+          throw error;
+        }
+
+        lastError = error;
+
+        // Check if error is retryable
+        if (!config.retryableErrors.includes(error.code) || attempt >= config.maxRetries) {
+          throw error;
+        }
+
+        attempt++;
+
+        // Calculate delay with exponential backoff
+        const delay = config.retryDelay * Math.pow(config.backoffMultiplier, attempt - 1);
+
+        // Check for Retry-After header
+        if (error.statusCode === 429 && error.context?.retryAfter) {
+          const retryAfter = error.context.retryAfter;
+          const serverDelay = retryAfter * 1000;
+          await this.sleep(Math.max(delay, serverDelay));
+        } else {
+          await this.sleep(delay);
+        }
+
+        // Update error context with retry info
+        error.context.retryAttempt = attempt;
+        error.context.maxRetries = config.maxRetries;
+      }
+    }
+
+    throw lastError;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // ============================================================================
+  // Caching System
+  // ============================================================================
+
+  private generateCacheKey(url: string): string {
+    return `fetch:${url}`;
+  }
+
+  private getFromCache(url: string): FetchtiumResponse | null {
+    if (!this.cacheConfig.enabled) return null;
+
+    const key = this.generateCacheKey(url);
+    const entry = this.cache.get(key);
+
+    if (!entry) return null;
+
+    // Check if expired
+    const now = Date.now();
+    if (now - entry.timestamp > entry.ttl * 1000) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data;
+  }
+
+  private setCache(url: string, data: FetchtiumResponse): void {
+    if (!this.cacheConfig.enabled) return;
+
+    // Check cache size limit
+    if (this.cache.size >= this.cacheConfig.maxSize) {
+      // Remove oldest entry
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+      }
+    }
+
+    const key = this.generateCacheKey(url);
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: this.cacheConfig.ttl,
+    });
+  }
+
+  /**
+   * Clear cache
+   */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Get cache stats
+   */
+  getCacheStats(): { size: number; maxSize: number; enabled: boolean } {
+    return {
+      size: this.cache.size,
+      maxSize: this.cacheConfig.maxSize,
+      enabled: this.cacheConfig.enabled,
+    };
+  }
+
+  // ============================================================================
+  // Rate Limiting
+  // ============================================================================
+
+  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+    // If under limit, execute immediately
+    if (this.activeRequests < this.rateLimitConfig.maxConcurrent) {
+      this.activeRequests++;
+      try {
+        return await fn();
+      } finally {
+        this.activeRequests--;
+        this.processQueue();
+      }
+    }
+
+    // Queue the request
+    return new Promise<T>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(FetchtiumError.timeoutError(this.rateLimitConfig.queueTimeout));
+        const index = this.requestQueue.findIndex(item => item.reject === reject);
+        if (index !== -1) this.requestQueue.splice(index, 1);
+      }, this.rateLimitConfig.queueTimeout);
+
+      this.requestQueue.push({
+        resolve: resolve as (value: unknown) => void,
+        reject: reject as (error: unknown) => void,
+        fn: async () => {
+          clearTimeout(timeoutId);
+          try {
+            const result = await fn();
+            resolve(result);
+          } catch (error) {
+            reject(error);
+          }
+        },
+      });
+    });
+  }
+
+  private processQueue(): void {
+    while (
+      this.requestQueue.length > 0 &&
+      this.activeRequests < this.rateLimitConfig.maxConcurrent
+    ) {
+      const item = this.requestQueue.shift();
+      if (item) {
+        this.activeRequests++;
+        item.fn()
+          .finally(() => {
+            this.activeRequests--;
+            this.processQueue();
+          })
+          .then(item.resolve)
+          .catch(item.reject);
+      }
+    }
+  }
+
+  /**
+   * Get rate limit stats
+   */
+  getRateLimitStats(): {
+    activeRequests: number;
+    queuedRequests: number;
+    maxConcurrent: number;
+  } {
+    return {
+      activeRequests: this.activeRequests,
+      queuedRequests: this.requestQueue.length,
+      maxConcurrent: this.rateLimitConfig.maxConcurrent,
+    };
+  }
+
+  // ============================================================================
+  // Batch Processing
+  // ============================================================================
+
+  /**
+   * Fetch multiple URLs in batch
+   * @param urls - Array of URLs to fetch
+   * @param options - Batch processing options
+   * @returns Promise resolving to array of BatchResult
+   */
+  async fetchBatch(
+    urls: string[],
+    options?: { concurrency?: number; stopOnError?: boolean }
+  ): Promise<Array<{
+    url: string;
+    success: boolean;
+    data?: FetchtiumResponse;
+    error?: FetchtiumError;
+    responseTime?: number;
+  }>> {
+    const config = {
+      concurrency: options?.concurrency || 3,
+      stopOnError: options?.stopOnError || false,
+    };
+
+    const results: Array<{
+      url: string;
+      success: boolean;
+      data?: FetchtiumResponse;
+      error?: FetchtiumError;
+      responseTime?: number;
+    }> = [];
+    const queue = [...urls];
+    const active: Promise<void>[] = [];
+
+    const processUrl = async (url: string): Promise<void> => {
+      const startTime = Date.now();
+      try {
+        const data = await this.fetch(url);
+        results.push({
+          url,
+          success: true,
+          data,
+          responseTime: Date.now() - startTime,
+        });
+      } catch (error) {
+        const result: {
+          url: string;
+          success: boolean;
+          data?: FetchtiumResponse;
+          error?: FetchtiumError;
+          responseTime?: number;
+        } = {
+          url,
+          success: false,
+          error: error instanceof FetchtiumError ? error : undefined,
+          responseTime: Date.now() - startTime,
+        };
+        results.push(result);
+
+        if (config.stopOnError) {
+          throw error;
+        }
+      }
+    };
+
+    while (queue.length > 0 || active.length > 0) {
+      while (active.length < config.concurrency && queue.length > 0) {
+        const url = queue.shift()!;
+        const promise = processUrl(url).finally(() => {
+          const index = active.indexOf(promise);
+          if (index !== -1) active.splice(index, 1);
+        });
+        active.push(promise);
+      }
+
+      if (active.length > 0) {
+        await Promise.race(active);
+      }
+    }
+
+    return results;
   }
 }

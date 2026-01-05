@@ -3,7 +3,7 @@
  * Run with: npx tsx test-merge.ts
  */
 
-import { XTClient } from './src/index';
+import { XTClient } from '../../src/index';
 import * as fs from 'fs';
 
 const API_KEY = 'xt_45277959eec3b6f17ea049324b62902f925faf07c084c1832d9bfbe18b4824f2';
