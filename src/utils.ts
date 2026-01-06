@@ -22,7 +22,6 @@ export const SUPPORTED_PLATFORMS: Platform[] = [
   'soundcloud',
   'pixiv',
   // Adult Platforms (18+)
-  'erome',
   'eporner',
   'rule34video',
   // Generic (fallback for any URL)
@@ -39,11 +38,11 @@ const PLATFORM_PATTERNS: Record<Platform, RegExp[]> = {
   twitter: [/twitter\.com/, /x\.com/, /t\.co/],
   tiktok: [/tiktok\.com/, /vm\.tiktok\.com/, /vt\.tiktok\.com/],
   youtube: [/youtube\.com/, /youtu\.be/, /youtube-nocookie\.com/, /m\.youtube\.com/],
+  bluesky: [/bsky\.app/, /bsky\.social/],
   reddit: [/reddit\.com/, /redd\.it/, /old\.reddit\.com/],
   bilibili: [/bilibili\.com/, /b23\.tv/],
   soundcloud: [/soundcloud\.com/, /snd\.sc/],
   pixiv: [/pixiv\.net/, /pximg\.net/],
-  erome: [/erome\.com/],
   eporner: [/eporner\.com/],
   rule34video: [/rule34video\.com/],
   generic: [/.*/], // Matches any URL as fallback

@@ -71,7 +71,7 @@ const ENDPOINTS = {
  * @example
  * ```typescript
  * const client = new FetchtiumClient({
- *   apiKey: 'sk_xxxxx',
+ *   apiKey: 'sk-dwa_xxxxx',
  *   baseUrl: 'http://localhost:8080',
  *   timeout: 30000
  * });

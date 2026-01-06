@@ -28,7 +28,7 @@ yarn add fetchtium-wrapper
 import { FetchtiumClient } from 'fetchtium-wrapper';
 
 const client = new FetchtiumClient({
-  apiKey: 'sk_xxxxx',
+  apiKey: 'sk-dwa_xxxxx',
   baseUrl: 'http://localhost:8080', // optional
 });
 
@@ -53,8 +53,9 @@ if (result.success) {
 | Twitter/X | ✅ | Native + Enhanced (Syndication API) |
 | TikTok | ✅ | Native + Enhanced (TikWM API) |
 | YouTube | ✅ | yt-dlp + Enhanced (Merge support) |
+| Bluesky | ✅ | gallery-dl |
 
-### Generic Extractors (yt-dlp)
+### Generic Extractors (yt-dlp / gallery-dl)
 
 | Platform | Status | Provider |
 |----------|--------|----------|
@@ -62,7 +63,6 @@ if (result.success) {
 | Bilibili | ✅ | yt-dlp |
 | SoundCloud | ✅ | yt-dlp |
 | Pixiv | ✅ | yt-dlp |
-| Erome | ✅ | yt-dlp (18+) |
 | Eporner | ✅ | yt-dlp (18+) |
 | Rule34Video | ✅ | yt-dlp (18+) |
 | Generic | ✅ | yt-dlp (fallback) |
@@ -106,27 +106,41 @@ const client = new FetchtiumClient({
 
 ## API Reference
 
-### fetch(url)
+### fetch(url, options?)
 
 Fetch media from a URL with automatic caching and rate limiting.
 
 ```typescript
 const result = await client.fetch('https://www.instagram.com/p/ABC123/');
 
+// With skipCache option to bypass cache
+const fresh = await client.fetch('https://www.instagram.com/p/ABC123/', { skipCache: true });
+
 // Response structure
 {
-  success: boolean,
+  success: true,
   data: {
     platform: 'instagram',
     contentType: 'carousel',
-    author: { name, username, avatar, verified },
+    id: 'ABC123',
+    title: 'Post title',
+    description: 'Post caption...',
+    author: { name: 'User', username: 'user', avatar: '...', verified: true },
+    thumbnail: 'https://...',
+    engagement: { views: 1000, likes: 500, comments: 50, shares: 10 },
     downloads: [
-      { index: 0, type: 'image', quality: 'HD', url: '...' },
-      { index: 1, type: 'video', quality: '1080p', url: '...' }
-    ]
+      { index: 0, type: 'image', quality: 'HD', url: '...', extension: 'jpg' },
+      { index: 1, type: 'video', quality: '1080p', url: '...', extension: 'mp4' }
+    ],
+    audio_capabilities: { has_separate_audio: false, can_convert_m4a: true, can_convert_mp3: true }
   },
-  meta: { responseTime: 1234 },
-  cached: false
+  meta: {
+    url: 'https://www.instagram.com/p/ABC123/',
+    resolvedUrl: 'https://www.instagram.com/p/ABC123/',
+    responseTime: 1234,
+    isPublic: true,
+    cached: false
+  }
 }
 ```
 
@@ -228,7 +242,6 @@ The Generic platform uses **yt-dlp** as a fallback extractor for URLs that don't
 - Bilibili - Videos, comments
 - SoundCloud - Audio tracks
 - Pixiv - Images, illustrations
-- Erome - Adult content (18+)
 - Eporner - Adult videos (18+)
 - Rule34Video - Adult videos (18+)
 
@@ -279,7 +292,7 @@ const stats = client.getRateLimitStats();
 import { FetchtiumClient } from 'fetchtium-wrapper';
 
 const client = new FetchtiumClient({
-  apiKey: 'sk_xxxxx',
+  apiKey: 'sk-dwa_xxxxx',
 });
 
 const result = await client.fetch('https://www.instagram.com/p/ABC123/');
@@ -295,7 +308,7 @@ if (result.success) {
 
 ```typescript
 const client = new FetchtiumClient({
-  apiKey: 'sk_xxxxx',
+  apiKey: 'sk-dwa_xxxxx',
   retry: {
     maxRetries: 5,
     retryDelay: 2000,
@@ -310,7 +323,7 @@ const result = await client.fetchWithRetry('https://www.instagram.com/p/ABC123/'
 
 ```typescript
 const client = new FetchtiumClient({
-  apiKey: 'sk_xxxxx',
+  apiKey: 'sk-dwa_xxxxx',
   cache: {
     enabled: true,
     ttl: 300,      // 5 minutes
@@ -329,7 +342,7 @@ const result2 = await client.fetch('https://www.instagram.com/p/ABC123/');
 
 ```typescript
 const client = new FetchtiumClient({
-  apiKey: 'sk_xxxxx',
+  apiKey: 'sk-dwa_xxxxx',
   rateLimit: {
     maxConcurrent: 3,      // Max 3 concurrent requests
     queueTimeout: 30000,   // 30 second queue timeout
@@ -349,7 +362,7 @@ const results = await Promise.all([
 
 ```typescript
 const client = new FetchtiumClient({
-  apiKey: 'sk_xxxxx',
+  apiKey: 'sk-dwa_xxxxx',
 });
 
 const urls = [
@@ -379,7 +392,7 @@ results.forEach(result => {
 
 ```typescript
 const client = new FetchtiumClient({
-  apiKey: 'sk_xxxxx',
+  apiKey: 'sk-dwa_xxxxx',
 });
 
 const result = await client.merge({

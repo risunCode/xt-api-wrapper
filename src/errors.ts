@@ -124,7 +124,7 @@ export class FetchtiumError extends Error {
       suggestions: [
         'Check the URL format',
         'Ensure the URL is from a supported platform',
-        'Supported platforms: Instagram, Facebook, Twitter/X, TikTok, YouTube, Reddit, Bilibili, SoundCloud, Pixiv, Erome, Eporner, Rule34Video',
+        'Supported platforms: Instagram, Facebook, Twitter/X, TikTok, YouTube, Bluesky, Reddit, Bilibili, SoundCloud, Pixiv, Eporner, Rule34Video',
       ],
     });
   }
@@ -270,11 +270,11 @@ export class FetchtiumError extends Error {
       INVALID_URL: [
         'Check the URL format',
         'Ensure the URL is from a supported platform',
-        'Supported platforms: Instagram, Facebook, Twitter/X, TikTok, YouTube, Reddit, Bilibili, SoundCloud, Pixiv, Erome, Eporner, Rule34Video',
+        'Supported platforms: Instagram, Facebook, Twitter/X, TikTok, YouTube, Bluesky, Reddit, Bilibili, SoundCloud, Pixiv, Eporner, Rule34Video',
       ],
       UNSUPPORTED_PLATFORM: [
         'This platform is not supported',
-        'Supported platforms: Instagram, Facebook, Twitter/X, TikTok, YouTube, Reddit, Bilibili, SoundCloud, Pixiv, Erome, Eporner, Rule34Video',
+        'Supported platforms: Instagram, Facebook, Twitter/X, TikTok, YouTube, Bluesky, Reddit, Bilibili, SoundCloud, Pixiv, Eporner, Rule34Video',
       ],
       COOKIE_REQUIRED: [
         'This content requires authentication',

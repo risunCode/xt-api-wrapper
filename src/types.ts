@@ -78,13 +78,13 @@ export type Platform =
   | 'twitter'
   | 'tiktok'
   | 'youtube'
+  | 'bluesky'
   // Content Platforms
   | 'reddit'
   | 'bilibili'
   | 'soundcloud'
   | 'pixiv'
   // Adult Platforms (18+)
-  | 'erome'
   | 'eporner'
   | 'rule34video'
   // Generic (fallback for any URL)
@@ -100,7 +100,8 @@ export type ContentType =
   | 'story'
   | 'reel'
   | 'post'
-  | 'carousel';
+  | 'carousel'
+  | 'gallery';
 
 /**
  * Type of downloadable media
@@ -149,20 +150,30 @@ export interface MediaData {
   thumbnail?: string;
   /** Duration in seconds (for videos/audio) */
   duration?: number;
+  /** Engagement metrics (views, likes, comments, shares) */
+  engagement?: Engagement;
   /** Available downloads */
   downloads: Download[];
-  /** Engagement metrics */
-  engagement?: Engagement;
-  /** Original URL that was processed */
-  url: string;
-  /** Source URL (may include query params) */
-  sourceUrl?: string;
+  /** Audio conversion capabilities */
+  audioCapabilities?: AudioCapabilities;
   /** Timestamp when content was extracted */
   extractedAt?: string;
   /** Whether a cookie was used for extraction */
   usedCookie?: boolean;
   /** Issues/errors encountered during extraction */
   issues?: string[];
+}
+
+/**
+ * Audio conversion capabilities for the content
+ */
+export interface AudioCapabilities {
+  /** Whether video has separate audio track */
+  hasSeparateAudio?: boolean;
+  /** Whether audio can be converted to M4A */
+  canConvertM4a?: boolean;
+  /** Whether audio can be converted to MP3 */
+  canConvertMp3?: boolean;
 }
 
 /**
@@ -237,16 +248,16 @@ export interface Engagement {
  * Response metadata
  */
 export interface ResponseMeta {
+  /** Original input URL */
+  url?: string;
+  /** Final resolved URL after redirects (contains the source URL) */
+  resolvedUrl?: string;
   /** Time taken to process the request (ms) */
   responseTime: number;
-  /** Final resolved URL after redirects */
-  resolvedUrl?: string;
-  /** Original URL */
-  url?: string;
   /** Whether the content is publicly accessible */
   isPublic?: boolean;
-  /** Whether a cookie was used */
-  usedCookie?: boolean;
+  /** Whether response was served from cache */
+  cached?: boolean;
 }
 
 // ============================================================================
