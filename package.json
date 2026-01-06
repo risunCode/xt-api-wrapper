@@ -1,6 +1,6 @@
 {
   "name": "fetchtium-wrapper",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "TypeScript wrapper for Fetchtium social media downloader - Extract media from Instagram, Facebook, Twitter, TikTok, YouTube, Bluesky, Reddit, Bilibili, SoundCloud, Pixiv, Eporner, Rule34Video, and more",
   "author": "risunCode",
   "license": "GPL-3.0",
